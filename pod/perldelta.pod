@@ -36,6 +36,18 @@ For more detail see L<perlop/Class Instance Operator>.
 
 [ List each enhancement as a =head2 entry ]
 
+=head2 The C<POSIX::mblen()> function now can reset the shift state
+
+This function is always executed under the current C language locale.
+(See L<perllocale>.)  Most locales are stateless, but a few, notably ISO
+2022, maintain a state between calls to this function.  Previously it
+was impossible to reset this state, but now, calling the function with
+the first parameter being C<undef> does the reset.  On threaded builds,
+the C<mbrlen()> function is automatically and transparently used
+instead to lessen the chances of race conditions with other threads.  On
+systems with thread-safe locale handling, there shouldn't be any races
+at all.
+
 =head1 Security
 
 XXX Any security-related notices go here.  In particular, any security
