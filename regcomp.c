@@ -871,12 +871,14 @@ static const scan_data_t zero_scan_data = {
         }                                                               \
     } STMT_END
 
-/* m is not necessarily a "literal string", in this macro */
-#define reg_warn_non_literal_string(loc, m)                             \
-    _WARN_HELPER(loc, packWARN(WARN_REGEXP),                            \
-                      Perl_warner(aTHX_ packWARN(WARN_REGEXP),          \
+/* m is not necessarily a "literal string", in the following 2 macros */
+#define warn_non_literal_string(loc, packed_warn, m)                    \
+    _WARN_HELPER(loc, packed_warn,                                      \
+                      Perl_warner(aTHX_ packed_warn,                    \
                                        "%s" REPORT_LOCATION,            \
                                   m, REPORT_LOCATION_ARGS(loc)))
+#define reg_warn_non_literal_string(loc, m)                             \
+                warn_non_literal_string(loc, packWARN(WARN_REGEXP), m)  \
 
 #define	ckWARNreg(loc,m) 					        \
     _WARN_HELPER(loc, packWARN(WARN_REGEXP),                            \
@@ -13912,6 +13914,8 @@ S_regatom(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth)
              * under /i the categorization of folding/non-folding character
              * changes */
             while (p < RExC_end && len < upper_fill) {
+                const char* message;
+                U32 packed_warn;
 
                 /* In most cases each iteration adds one byte to the output.
                  * The exceptions override this */
@@ -14041,68 +14045,70 @@ S_regatom(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth)
 			p++;
 			break;
 		    case 'o':
-			{
-			    UV result;
-			    const char* error_msg;
-
-			    bool valid = grok_bslash_o(&p,
-                                                       RExC_end,
-						       &result,
-						       &error_msg,
-						       TO_OUTPUT_WARNINGS(p),
-                                                       (bool) RExC_strict,
-                                                       TRUE, /* Output warnings
-                                                                for non-
-                                                                portables */
-                                                       UTF);
-			    if (! valid) {
-				RExC_parse = p;	/* going to die anyway; point
-						   to exact spot of failure */
-				vFAIL(error_msg);
-			    }
-                            UPDATE_WARNINGS_LOC(p - 1);
-                            ender = result;
-			    break;
-			}
+                        if (! grok_bslash_o(&p,
+                                            RExC_end,
+                                            &ender,
+                                            &message,
+                                            (bool) RExC_strict,
+                                            TRUE, /* Silence warnings for non-portables */
+                                            &packed_warn,
+                                            UTF))
+                        {
+                            RExC_parse = p; /* going to die anyway; point to
+                                               exact spot of failure */
+                            vFAIL(message);
+                        }
+                        else if (message && TO_OUTPUT_WARNINGS(p)) {
+                            warn_non_literal_string(p, packed_warn, message);
+                        }
+                        break;
 		    case 'x':
-			{
-                            UV result = UV_MAX; /* initialize to erroneous
-                                                   value */
-			    const char* error_msg;
-
-			    bool valid = grok_bslash_x(&p,
-                                                       RExC_end,
-						       &result,
-						       &error_msg,
-                                                       TO_OUTPUT_WARNINGS(p),
-                                                       (bool) RExC_strict,
-                                                       TRUE, /* Silence warnings
-                                                                for non-
-                                                                portables */
-                                                       UTF);
-			    if (! valid) {
-				RExC_parse = p;	/* going to die anyway; point
-						   to exact spot of failure */
-				vFAIL(error_msg);
-			    }
-                            UPDATE_WARNINGS_LOC(p - 1);
-                            ender = result;
+                        if (! grok_bslash_x(&p,
+                                            RExC_end,
+                                            &ender,
+                                            &message,
+                                            (bool) RExC_strict,
+                                            TRUE, /* Silence warnings for non-
+                                                     portables */
+                                            &packed_warn,
+                                            UTF))
+                        {
+                            RExC_parse = p;	/* going to die anyway; point
+                                                   to exact spot of failure */
+                            vFAIL(message);
+                        }
+                        else if (message && TO_OUTPUT_WARNINGS(p)) {
+                            warn_non_literal_string(p, packed_warn, message);
+                        }
 
 #ifdef EBCDIC
-                            if (ender < 0x100) {
-                                if (RExC_recode_x_to_native) {
-                                    ender = LATIN1_TO_NATIVE(ender);
-                                }
-			    }
+                        if (ender < 0x100) {
+                            if (RExC_recode_x_to_native) {
+                                ender = LATIN1_TO_NATIVE(ender);
+                            }
+                        }
 #endif
-			    break;
-			}
+                        break;
 		    case 'c':
-			p++;
-			ender = grok_bslash_c(*p, TO_OUTPUT_WARNINGS(p));
-                        UPDATE_WARNINGS_LOC(p);
+                      {
+                        U8 value;
+                        bool valid;
+
                         p++;
+                        valid = grok_bslash_c(*p, &value, &message, &packed_warn);
+                        p += (UTF) ? UTF8SKIP(p) : 1;
+
+                        if (! valid) {
+                            RExC_parse = p; /* going to die anyway; point to
+                                               exact spot of failure */
+                            vFAIL(message);
+                        }
+                        else if (message && TO_OUTPUT_WARNINGS(p)) {
+                            warn_non_literal_string(p, packed_warn, message);
+                        }
+                        ender = value;
 			break;
+                      }
                     case '8': case '9': /* must be a backreference */
                         --p;
                         /* we have an escape like \8 which cannot be an octal escape
@@ -16898,6 +16904,7 @@ S_output_posix_warnings(pTHX_ RExC_state_t *pRExC_state, AV* posix_warnings)
     PERL_ARGS_ASSERT_OUTPUT_POSIX_WARNINGS;
 
     if (! TO_OUTPUT_WARNINGS(RExC_parse)) {
+        CLEAR_POSIX_WARNINGS();
         return;
     }
 
@@ -17328,6 +17335,8 @@ S_regclass(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth,
              * is already in 'value'.  Otherwise, need to translate the escape
              * into what it signifies. */
             if (! skip_white || ! isBLANK_A(value)) switch ((I32)value) {
+                const char * message;
+                U32 packed_warn;
 
 	    case 'w':	namedclass = ANYOF_WORDCHAR;	break;
 	    case 'W':	namedclass = ANYOF_NWORDCHAR;	break;
@@ -17578,48 +17587,60 @@ S_regclass(pTHX_ RExC_state_t *pRExC_state, I32 *flagp, U32 depth,
 	    case 'a':	value = '\a';                   break;
 	    case 'o':
 		RExC_parse--;	/* function expects to be pointed at the 'o' */
-		{
-		    const char* error_msg;
-		    bool valid = grok_bslash_o(&RExC_parse,
-                                               RExC_end,
-					       &value,
-					       &error_msg,
-                                               TO_OUTPUT_WARNINGS(RExC_parse),
-                                               strict,
-                                               silence_non_portable,
-                                               UTF);
-		    if (! valid) {
-			vFAIL(error_msg);
-		    }
-                    UPDATE_WARNINGS_LOC(RExC_parse - 1);
-		}
+                if (! grok_bslash_o(&RExC_parse,
+                                            RExC_end,
+                                            &value,
+                                            &message,
+                                            strict,
+                                            silence_non_portable,
+                                            &packed_warn,
+                                            UTF))
+                {
+                    vFAIL(message);
+                }
+                else if (message && TO_OUTPUT_WARNINGS(RExC_parse)) {
+                    warn_non_literal_string(RExC_parse, packed_warn, message);
+                }
+
                 non_portable_endpoint++;
 		break;
 	    case 'x':
 		RExC_parse--;	/* function expects to be pointed at the 'x' */
-		{
-		    const char* error_msg;
-		    bool valid = grok_bslash_x(&RExC_parse,
-                                               RExC_end,
-					       &value,
-					       &error_msg,
-					       TO_OUTPUT_WARNINGS(RExC_parse),
-                                               strict,
-                                               silence_non_portable,
-                                               UTF);
-                    if (! valid) {
-			vFAIL(error_msg);
-		    }
-                    UPDATE_WARNINGS_LOC(RExC_parse - 1);
-		}
+                if (!  grok_bslash_x(&RExC_parse,
+                                            RExC_end,
+                                            &value,
+                                            &message,
+                                            strict,
+                                            silence_non_portable,
+                                            &packed_warn,
+                                            UTF))
+                {
+                    vFAIL(message);
+                }
+                else if (message && TO_OUTPUT_WARNINGS(RExC_parse)) {
+                    warn_non_literal_string(RExC_parse, packed_warn, message);
+                }
+
                 non_portable_endpoint++;
 		break;
 	    case 'c':
-		value = grok_bslash_c(*RExC_parse, TO_OUTPUT_WARNINGS(RExC_parse));
-                UPDATE_WARNINGS_LOC(RExC_parse);
-		RExC_parse++;
+              {
+                U8 char_value;
+                bool valid = grok_bslash_c(*RExC_parse, &char_value, &message, &packed_warn);
+
+                    /* XXX is SKIP valid? */
+                RExC_parse += (UTF) ? UTF8SKIP(RExC_parse) : 1;
+
+                if (! valid) {
+                    vFAIL(message);
+                }
+                else if (message && TO_OUTPUT_WARNINGS(RExC_parse)) {
+                    warn_non_literal_string(RExC_parse, packed_warn, message);
+                }
+                value = char_value;
                 non_portable_endpoint++;
 		break;
+              }
 	    case '0': case '1': case '2': case '3': case '4':
 	    case '5': case '6': case '7':
 		{

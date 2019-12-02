@@ -1135,24 +1135,26 @@ Ap	|void	|vload_module|U32 flags|NN SV* name|NULLOK SV* ver|NULLOK va_list* args
 : Used in perly.y
 p	|OP*	|localize	|NN OP *o|I32 lex
 ApdR	|I32	|looks_like_number|NN SV *const sv
-Apd	|UV	|grok_bin	|NN const char* start|NN STRLEN* len_p|NN I32* flags|NULLOK NV *result
 #if defined(PERL_IN_REGCOMP_C) || defined(PERL_IN_TOKE_C) || defined(PERL_IN_DQUOTE_C)
 EpRX	|bool	|grok_bslash_x	|NN char** s		 \
 				|NN const char* const send	 \
 				|NN UV* uv			 \
-				|NN const char** error_msg       \
-				|const bool output_warning       \
+				|NN const char** message	 \
 				|const bool strict               \
 				|const bool silence_non_portable \
+				|NULLOK U32 * packed_warn	 \
 				|const bool utf8
-EpRX	|char	|grok_bslash_c	|const char source|const bool output_warning
-EpRX	|bool	|grok_bslash_o	|NN char** s		 \
+EpRX	|bool	|grok_bslash_c	|const char source		\
+				|NN U8 * result			\
+				|NN const char** message	\
+				|NULLOK U32 * packed_warn
+EpRX	|bool	|grok_bslash_o	|NN char** s			 \
 				|NN const char* const send	 \
 				|NN UV* uv			 \
-				|NN const char** error_msg       \
-				|const bool output_warning       \
+				|NN const char** message         \
 				|const bool strict               \
 				|const bool silence_non_portable \
+				|NULLOK U32 * packed_warn	 \
 				|const bool utf8
 EiR	|char*|form_short_octal_warning|NN const char * const s  \
 				|const STRLEN len
@@ -1163,7 +1165,9 @@ Apd	|int	|grok_infnan	|NN const char** sp|NN const char *send
 Apd	|int	|grok_number	|NN const char *pv|STRLEN len|NULLOK UV *valuep
 Apd	|int	|grok_number_flags|NN const char *pv|STRLEN len|NULLOK UV *valuep|U32 flags
 ApdR	|bool	|grok_numeric_radix|NN const char **sp|NN const char *send
-Apd	|UV	|grok_oct	|NN const char* start|NN STRLEN* len_p|NN I32* flags|NULLOK NV *result
+ApMd	|UV	|grok_oct	|NN const char* start|NN STRLEN* len_p|NN I32* flags|NULLOK NV *result
+ApMd	|UV	|grok_bin	|NN const char* start|NN STRLEN* len_p|NN I32* flags|NULLOK NV *result
+Apd	|UV	|grok_bin_oct	|NN const char* start|NN STRLEN* len_p|NN I32* flags|NULLOK NV *result|const unsigned shift
 EXpdT	|bool	|grok_atoUV	|NN const char* pv|NN UV* valptr|NULLOK const char** endptr
 : These are all indirectly referenced by globals.c. This is somewhat annoying.
 p	|int	|magic_clearenv	|NN SV* sv|NN MAGIC* mg

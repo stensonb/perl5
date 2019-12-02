@@ -15,51 +15,65 @@
     U8 source = *current;
 */
 
-char
-Perl_grok_bslash_c(pTHX_ const char source, const bool output_warning)
+bool
+Perl_grok_bslash_c(pTHX_ const char   source,
+                         U8 *         result,
+                         const char** message,
+                         U32 *        packed_warn)
 {
+    const bool output_warning = packed_warn == NULL;
 
-    U8 result;
+    PERL_ARGS_ASSERT_GROK_BSLASH_C;
+
+    *message = NULL;
 
     if (! isPRINT_A(source)) {
-        Perl_croak(aTHX_ "%s",
-                        "Character following \"\\c\" must be printable ASCII");
+        *message = "Character following \"\\c\" must be printable ASCII";
+        return FALSE;
     }
-    else if (source == '{') {
+
+    if (source == '{') {
         const char control = toCTRL('{');
         if (isPRINT_A(control)) {
             /* diag_listed_as: Use "%s" instead of "%s" */
-            Perl_croak(aTHX_ "Use \"%c\" instead of \"\\c{\"", control);
+            *message = Perl_form(aTHX_ "Use \"%c\" instead of \"\\c{\"", control);
         }
         else {
-            Perl_croak(aTHX_ "Sequence \"\\c{\" invalid");
+            *message = "Sequence \"\\c{\" invalid";
         }
+        return FALSE;
     }
 
-    result = toCTRL(source);
-    if (output_warning && isPRINT_A(result)) {
+    *result = toCTRL(source);
+    if (isPRINT_A(*result) && ckWARN(WARN_SYNTAX)) {
         U8 clearer[3];
         U8 i = 0;
-        if (! isWORDCHAR(result)) {
+        char format[] = "\"\\c%c\" is more clearly written simply as \"%s\"";
+
+        if (! isWORDCHAR(*result)) {
             clearer[i++] = '\\';
         }
-        clearer[i++] = result;
+        clearer[i++] = *result;
         clearer[i++] = '\0';
 
-        Perl_ck_warner(aTHX_ packWARN(WARN_SYNTAX),
-                        "\"\\c%c\" is more clearly written simply as \"%s\"",
-                        source,
-                        clearer);
+        if (output_warning) {
+            Perl_warner(aTHX_ packWARN(WARN_SYNTAX), format, source, clearer);
+        }
+        else {
+            *message = Perl_form(aTHX_ format, source, clearer);
+            *packed_warn = packWARN(WARN_SYNTAX);
+        }
     }
 
-    return result;
+    return TRUE;
 }
 
 bool
 Perl_grok_bslash_o(pTHX_ char **s, const char * const send, UV *uv,
-                      const char** error_msg,
-                      const bool output_warning, const bool strict,
+                      const char** message,
+                      const bool strict,
                       const bool silence_non_portable,
+                      U32 *      packed_warn,
                       const bool UTF)
 {
 
@@ -81,7 +95,7 @@ Perl_grok_bslash_o(pTHX_ char **s, const char * const send, UV *uv,
  *	    range *s..send-1
  *	uv  points to a UV that will hold the output value, valid only if the
  *	    return from the function is TRUE
- *      error_msg is a pointer that will be set to an internal buffer giving an
+ *      message is a pointer that will be set to an internal buffer giving an
  *	    error message upon failure (the return is FALSE).  Untouched if
  *	    function succeeds
  *	output_warning says whether to output any warning messages, or suppress
@@ -92,22 +106,29 @@ Perl_grok_bslash_o(pTHX_ char **s, const char * const send, UV *uv,
  *          point returned being too large to fit on all platforms.
  *	UTF is true iff the string *s is encoded in UTF-8.
  */
+    const bool output_warning = packed_warn == NULL;
     char* e;
     STRLEN numbers_len;
+    NV overflowed = 0.0;
     I32 flags = PERL_SCAN_ALLOW_UNDERSCORES
-		| PERL_SCAN_DISALLOW_PREFIX
-		/* XXX Until the message is improved in grok_oct, handle errors
-		 * ourselves */
-	        | PERL_SCAN_SILENT_ILLDIGIT;
+              | PERL_SCAN_DISALLOW_PREFIX
+              | PERL_SCAN_SILENT_ILLDIGIT
+              | PERL_SCAN_GREATER_THAN_UV_MAX;
 
     PERL_ARGS_ASSERT_GROK_BSLASH_O;
 
     assert(*(*s - 1) == '\\');
     assert(* *s       == 'o');
+
+    *message = NULL;
+    if (! output_warning) {
+        flags |= PERL_SCAN_SILENT_NON_PORTABLE;
+    }
+
     (*s)++;
 
     if (send <= *s || **s != '{') {
-	*error_msg = "Missing braces on \\o{}";
+	*message = "Missing braces on \\o{}";
 	return FALSE;
     }
 
@@ -117,7 +138,7 @@ Perl_grok_bslash_o(pTHX_ char **s, const char * const send, UV *uv,
         while (isOCTAL(**s)) { /* Position beyond the legal digits */
             (*s)++;
         }
-        *error_msg = "Missing right brace on \\o{";
+        *message = "Missing right brace on \\o{";
 	return FALSE;
     }
 
@@ -126,46 +147,80 @@ Perl_grok_bslash_o(pTHX_ char **s, const char * const send, UV *uv,
     numbers_len = e - *s;
     if (numbers_len == 0) {
         (*s)++;    /* Move past the } */
-	*error_msg = "Empty \\o{}";
+	*message = "Empty \\o{}";
 	return FALSE;
     }
 
-    if (silence_non_portable) {
-        flags |= PERL_SCAN_SILENT_NON_PORTABLE;
+    *uv = grok_oct(*s, &numbers_len, &flags, &overflowed);
+    if (overflowed != 0.0) {
+        *s = e;
+        *message = Perl_form(aTHX_ "Use of code point %a is not allowed; the"
+                                   " permissible max is %a (0%" UVof ")",
+                                   overflowed, (NV) MAX_LEGAL_CP, MAX_LEGAL_CP);
+        return FALSE;
     }
 
-    *uv = grok_oct(*s, &numbers_len, &flags, NULL);
     /* Note that if has non-octal, will ignore everything starting with that up
      * to the '}' */
-
     if (numbers_len != (STRLEN) (e - *s)) {
         if (strict) {
             *s += numbers_len;
             *s += (UTF) ? UTF8_SAFE_SKIP(*s, send) : 1;
-            *error_msg = "Non-octal character";
+            *message = "Non-octal character";
             return FALSE;
         }
-        else if (output_warning) {
-            Perl_ck_warner(aTHX_ packWARN(WARN_DIGIT),
-            /* diag_listed_as: Non-octal character '%c'.  Resolved as "%s" */
-                        "Non-octal character '%c'.  Resolved as \"\\o{%.*s}\"",
-                        *(*s + numbers_len),
-                        (int) numbers_len,
-                        *s);
+
+                /* XXX diag_listed_as: Non-octal character '%c'.  Resolved as "%s" */
+        if (ckWARN(WARN_DIGIT)) {
+            char non_octal = *(*s + numbers_len);
+            if (isPRINT_A(non_octal)) {
+                char format[] = "Non-octal character '%c'.  Resolved as \"\\o{%.*s}\"";
+
+                if (output_warning) {
+                    Perl_warner(aTHX_ packWARN(WARN_DIGIT), format, non_octal,
+                                    (int) numbers_len, *s);
+                }
+                else {
+                    *message = Perl_form(aTHX_ format, non_octal, (int) numbers_len, *s);
+                    *packed_warn = packWARN(WARN_DIGIT);
+                }
+            }
+            else {
+                char format[] = "Non-octal character.  Resolved as \"\\o{%.*s}\"";
+
+                if (output_warning) {
+                    Perl_warner(aTHX_ packWARN(WARN_DIGIT), format, 
+                                    (int) numbers_len, *s);
+                }
+                else {
+                    *message = Perl_form(aTHX_ format, (int) numbers_len, *s);
+                    *packed_warn = packWARN(WARN_DIGIT);
+                }
+            }
         }
     }
 
     /* Return past the '}' */
     *s = e + 1;
 
+    if (   ! silence_non_portable
+        && (flags & PERL_SCAN_SILENT_NON_PORTABLE)
+        && ckWARN(WARN_PORTABLE))
+    {
+        /*XXX EXTCONST */
+	*message = Perl_form(aTHX_ "Octal number > 037777777777 non-portable");
+        *packed_warn = packWARN(WARN_PORTABLE);
+    }
+
     return TRUE;
 }
 
 bool
 Perl_grok_bslash_x(pTHX_ char **s, const char * const send, UV *uv,
-                      const char** error_msg,
-                      const bool output_warning, const bool strict,
+                      const char** message,
+                      const bool strict,
                       const bool silence_non_portable,
+                      U32 *      packed_warn,
                       const bool UTF)
 {
 
@@ -188,10 +243,10 @@ Perl_grok_bslash_x(pTHX_ char **s, const char * const send, UV *uv,
  *	    range *s..send-1
  *	uv  points to a UV that will hold the output value, valid only if the
  *	    return from the function is TRUE
- *      error_msg is a pointer that will be set to an internal buffer giving an
+ *      message is a pointer that will be set to an internal buffer giving an
  *	    error message upon failure (the return is FALSE).  Untouched if
  *	    function succeeds
- *	output_warning says whether to output any warning messages, or suppress
+ *	*fatal says whether to output any warning messages, or suppress
  *	    them
  *	strict is true if anything out of the ordinary should cause this to
  *	    fail instead of warn or be silent.  For example, it requires
@@ -201,21 +256,30 @@ Perl_grok_bslash_x(pTHX_ char **s, const char * const send, UV *uv,
  *          point returned being too large to fit on all platforms.
  *	UTF is true iff the string *s is encoded in UTF-8.
  */
+    const bool output_warning = packed_warn == NULL;
     char* e;
     STRLEN numbers_len;
-    I32 flags = PERL_SCAN_DISALLOW_PREFIX;
-
+    NV overflowed = 0.0;
+    I32 flags = PERL_SCAN_DISALLOW_PREFIX
+              | PERL_SCAN_NOTIFY_ILLDIGIT
+              | PERL_SCAN_SILENT_ILLDIGIT
+              | PERL_SCAN_GREATER_THAN_UV_MAX;
 
     PERL_ARGS_ASSERT_GROK_BSLASH_X;
 
     assert(*(*s - 1) == '\\');
     assert(* *s      == 'x');
 
+    *message = NULL;
+    if (! output_warning) {
+        flags |= PERL_SCAN_SILENT_NON_PORTABLE;
+    }
+
     (*s)++;
 
     if (send <= *s) {
         if (strict) {
-            *error_msg = "Empty \\x";
+            *message = "Empty \\x";
             return FALSE;
         }
 
@@ -225,24 +289,36 @@ Perl_grok_bslash_x(pTHX_ char **s, const char * const send, UV *uv,
         return TRUE;
     }
 
-    if (strict || ! output_warning) {
-        flags |= PERL_SCAN_SILENT_ILLDIGIT;
-    }
-
     if (**s != '{') {
         STRLEN len = (strict) ? 3 : 2;
 
 	*uv = grok_hex(*s, &len, &flags, NULL);
 	*s += len;
-        if (strict && len != 2) {
+
+        if (len != 2 && (strict || (flags & PERL_SCAN_NOTIFY_ILLDIGIT))) {
             if (len < 2) {
-                *s += (UTF) ? UTF8_SAFE_SKIP(*s, send) : 1;
-                *error_msg = "Non-hex character";
+                if (strict) {
+                    *s += (UTF) ? UTF8_SAFE_SKIP(*s, send) : 1;
+                    *message = "Non-hex character";
+                    return FALSE;
+                }
+                
+                if (ckWARN(WARN_DIGIT)) {
+                    char format[] = "Non-hex character terminates \\x early.  Resolved as \"\\x%02X\"";
+
+                    if (output_warning) {
+                        Perl_warner(aTHX_ packWARN(WARN_DIGIT), format, (unsigned) *uv);
+                    }
+                    else {
+                        *message = Perl_form(aTHX_ format, (unsigned) *uv);
+                        *packed_warn = packWARN(WARN_DIGIT);
+                    }
+                }
             }
-            else {
-                *error_msg = "Use \\x{...} for more than two hex characters";
+            else if (strict) {
+                *message = "Use \\x{...} for more than two hex characters";
+                return FALSE;
             }
-            return FALSE;
         }
 	return TRUE;
     }
@@ -256,7 +332,7 @@ Perl_grok_bslash_x(pTHX_ char **s, const char * const send, UV *uv,
         /* XXX The corresponding message above for \o is just '\\o{'; other
          * messages for other constructs include the '}', so are inconsistent.
          */
-	*error_msg = "Missing right brace on \\x{}";
+	*message = "Missing right brace on \\x{}";
 	return FALSE;
     }
 
@@ -266,7 +342,7 @@ Perl_grok_bslash_x(pTHX_ char **s, const char * const send, UV *uv,
     if (numbers_len == 0) {
         if (strict) {
             (*s)++;    /* Move past the } */
-            *error_msg = "Empty \\x{}";
+            *message = "Empty \\x{}";
             return FALSE;
         }
         *s = e + 1;
@@ -275,23 +351,49 @@ Perl_grok_bslash_x(pTHX_ char **s, const char * const send, UV *uv,
     }
 
     flags |= PERL_SCAN_ALLOW_UNDERSCORES;
-    if (silence_non_portable) {
-        flags |= PERL_SCAN_SILENT_NON_PORTABLE;
+
+    *uv = grok_hex(*s, &numbers_len, &flags, &overflowed);
+    if (overflowed != 0.0) {
+        *s = e;
+        *message = Perl_form(aTHX_ "Use of code point %a is not allowed; the"
+                                   " permissible max is %a (0x%" UVXf ")",
+                                   overflowed, (NV) MAX_LEGAL_CP, MAX_LEGAL_CP);
+        return FALSE;
     }
 
-    *uv = grok_hex(*s, &numbers_len, &flags, NULL);
-    /* Note that if has non-hex, will ignore everything starting with that up
-     * to the '}' */
+    if (numbers_len != (STRLEN) (e - *s)) {
+        if (strict) {
+            *s += numbers_len;
+            *s += (UTF) ? UTF8_SAFE_SKIP(*s, send) : 1;
+            *message = "Non-hex character";
+            return FALSE;
+        }
 
-    if (strict && numbers_len != (STRLEN) (e - *s)) {
-        *s += numbers_len;
-        *s += (UTF) ? UTF8_SAFE_SKIP(*s, send) : 1;
-        *error_msg = "Non-hex character";
-        return FALSE;
+        if (ckWARN(WARN_DIGIT)) {
+            char format[] = "Non-hex character.  Resolved as \"\\x{%.*s}\"";
+
+            if (output_warning) {
+                Perl_warner(aTHX_ packWARN(WARN_DIGIT), format, 
+                                  (int) numbers_len, *s);
+            }
+            else {
+                *message = Perl_form(aTHX_ format, (int) numbers_len, *s);
+                *packed_warn = packWARN(WARN_DIGIT);
+            }
+        }
     }
 
     /* Return past the '}' */
     *s = e + 1;
+
+    if (   ! silence_non_portable
+        && (flags & PERL_SCAN_SILENT_NON_PORTABLE)
+        && ckWARN(WARN_PORTABLE))
+    {
+        /*XXX EXTCONST */
+	*message = Perl_form(aTHX_ "Hexadecimal number > 0xffffffff non-portable");
+        *packed_warn = packWARN(WARN_PORTABLE);
+    }
 
     return TRUE;
 }

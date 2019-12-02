@@ -4155,6 +4155,8 @@ a hex one was expected, like
 =item Non-octal character in regex; marked by S<<-- HERE> in m/%s/
 
 (F) In a regular expression, there was a non-octal character where
+XXX
+Note that within braces everything after first non-ocatal is ignored
 an octal one was expected, like
 
  (?[ [ \o{1278} ] ])

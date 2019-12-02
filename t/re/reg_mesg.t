@@ -283,7 +283,6 @@ my @death =
  "m/(?('/" => "Sequence (?('... not terminated {#} m/(?('{#}/",
  'm/\g{/'  => 'Sequence \g{... not terminated {#} m/\g{{#}/',
  'm/\k</'  => 'Sequence \k<... not terminated {#} m/\k<{#}/',
- 'm/\cß/' => "Character following \"\\c\" must be printable ASCII",
  '/((?# This is a comment in the middle of a token)?:foo)/' => 'In \'(?...)\', the \'(\' and \'?\' must be adjacent {#} m/((?# This is a comment in the middle of a token)?{#}:foo)/',
  '/((?# This is a comment in the middle of a token)*FAIL)/' => 'In \'(*VERB...)\', the \'(\' and \'*\' must be adjacent {#} m/((?# This is a comment in the middle of a token)*{#}FAIL)/',
  '/((?# This is a comment in the middle of a token)*script_run:foo)/' => 'In \'(*...)\', the \'(\' and \'*\' must be adjacent {#} m/((?# This is a comment in the middle of a token)*{#}script_run:foo)/',
@@ -332,25 +331,23 @@ my @death_only_under_strict = (
     'm/[\xABC]/' => "",
                  => 'Use \x{...} for more than two hex characters {#} m/[\xABC{#}]/',
 
-    # XXX This is a confusing error message.  The G isn't ignored; it just
-    # terminates the \x.  Also some messages below are missing the <-- HERE,
-    # aren't all category 'regexp'.  (Hence we have to turn off 'digit'
-    # messages as well below)
-    'm/\xAG/' => 'Illegal hexadecimal digit \'G\' ignored',
+    # some messages below aren't all category 'regexp'.  (Hence we have to
+    # turn off 'digit' messages as well below)
+    'm/\xAG/' => 'Non-hex character terminates \x early.  Resolved as "\x0A" {#} m/\xA{#}G/',
               => 'Non-hex character {#} m/\xAG{#}/',
-    'm/[\xAG]/' => 'Illegal hexadecimal digit \'G\' ignored',
+    'm/[\xAG]/' => 'Non-hex character terminates \x early.  Resolved as "\x0A" {#} m/[\xA{#}G]/',
                 => 'Non-hex character {#} m/[\xAG{#}]/',
-    'm/\o{789}/' => 'Non-octal character \'8\'.  Resolved as "\o{7}"',
+    'm/\o{789}/' => 'Non-octal character \'8\'.  Resolved as "\o{7}" {#} m/\o{789}{#}/',
                  => 'Non-octal character {#} m/\o{78{#}9}/',
-    'm/[\o{789}]/' => 'Non-octal character \'8\'.  Resolved as "\o{7}"',
+    'm/[\o{789}]/' => 'Non-octal character \'8\'.  Resolved as "\o{7}" {#} m/[\o{789}{#}]/',
                    => 'Non-octal character {#} m/[\o{78{#}9}]/',
     'm/\x{}/' => "",
               => 'Empty \x{} {#} m/\x{}{#}/',
     'm/[\x{}]/' => "",
                 => 'Empty \x{} {#} m/[\x{}{#}]/',
-    'm/\x{ABCDEFG}/' => 'Illegal hexadecimal digit \'G\' ignored',
+    'm/\x{ABCDEFG}/' => 'Non-hex character.  Resolved as "\x{ABCDEF}" {#} m/\x{ABCDEFG}{#}/',
                      => 'Non-hex character {#} m/\x{ABCDEFG{#}}/',
-    'm/[\x{ABCDEFG}]/' => 'Illegal hexadecimal digit \'G\' ignored',
+    'm/[\x{ABCDEFG}]/' => 'Non-hex character.  Resolved as "\x{ABCDEF}" {#} m/[\x{ABCDEFG}{#}]/',
                        => 'Non-hex character {#} m/[\x{ABCDEFG{#}}]/',
     "m'[\\y]\\x{100}'" => 'Unrecognized escape \y in character class passed through {#} m/[\y{#}]\x{100}/',
                        => 'Unrecognized escape \y in character class {#} m/[\y{#}]\x{100}/',
@@ -490,7 +487,8 @@ my @death_utf8 = mark_as_utf8(
  '/(?[ \t + \e # ネ This was supposed to be a comment ])/' =>
     "Syntax error in (?[...]) {#} m/(?[ \\t + \\e # ネ This was supposed to be a comment ]){#}/",
  'm/(*ネ)ネ/' => q<Unknown '(*...)' construct 'ネ' {#} m/(*ネ){#}ネ/>,
- '/\cネ/' => "Character following \"\\c\" must be printable ASCII",
+ '/\cネ/' => "Character following \"\\c\" must be printable ASCII {#} m/\\cネ{#}/",
+ '/[\cネ]/' => "Character following \"\\c\" must be printable ASCII {#} m/[\\cネ{#}]/",
  '/\b{ネ}/' => "'ネ' is an unknown bound type {#} m/\\b{ネ{#}}/",
  '/\B{ネ}/' => "'ネ' is an unknown bound type {#} m/\\B{ネ{#}}/",
 );

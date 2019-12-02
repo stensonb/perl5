@@ -188,13 +188,12 @@
 #define getcwd_sv(a)		Perl_getcwd_sv(aTHX_ a)
 #define gp_free(a)		Perl_gp_free(aTHX_ a)
 #define gp_ref(a)		Perl_gp_ref(aTHX_ a)
-#define grok_bin(a,b,c,d)	Perl_grok_bin(aTHX_ a,b,c,d)
+#define grok_bin_oct(a,b,c,d,e)	Perl_grok_bin_oct(aTHX_ a,b,c,d,e)
 #define grok_hex(a,b,c,d)	Perl_grok_hex(aTHX_ a,b,c,d)
 #define grok_infnan(a,b)	Perl_grok_infnan(aTHX_ a,b)
 #define grok_number(a,b,c)	Perl_grok_number(aTHX_ a,b,c)
 #define grok_number_flags(a,b,c,d)	Perl_grok_number_flags(aTHX_ a,b,c,d)
 #define grok_numeric_radix(a,b)	Perl_grok_numeric_radix(aTHX_ a,b)
-#define grok_oct(a,b,c,d)	Perl_grok_oct(aTHX_ a,b,c,d)
 #define gv_add_by_type(a,b)	Perl_gv_add_by_type(aTHX_ a,b)
 #define gv_autoload_pv(a,b,c)	Perl_gv_autoload_pv(aTHX_ a,b,c)
 #define gv_autoload_pvn(a,b,c,d)	Perl_gv_autoload_pvn(aTHX_ a,b,c,d)
@@ -1110,7 +1109,7 @@
 #  endif
 #  if defined(PERL_IN_REGCOMP_C) || defined(PERL_IN_TOKE_C) || defined(PERL_IN_DQUOTE_C)
 #define form_short_octal_warning(a,b)	S_form_short_octal_warning(aTHX_ a,b)
-#define grok_bslash_c(a,b)	Perl_grok_bslash_c(aTHX_ a,b)
+#define grok_bslash_c(a,b,c,d)	Perl_grok_bslash_c(aTHX_ a,b,c,d)
 #define grok_bslash_o(a,b,c,d,e,f,g,h)	Perl_grok_bslash_o(aTHX_ a,b,c,d,e,f,g,h)
 #define grok_bslash_x(a,b,c,d,e,f,g,h)	Perl_grok_bslash_x(aTHX_ a,b,c,d,e,f,g,h)
 #define regcurly		S_regcurly

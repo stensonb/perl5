@@ -3548,14 +3548,14 @@ S_scan_const(pTHX_ char *start)
 		{
 		    const char* error;
 
-		    bool valid = grok_bslash_o(&s, send,
+		    if (! grok_bslash_o(&s, send,
                                                &uv, &error,
-                                               TRUE, /* Output warning */
                                                FALSE, /* Not strict */
                                                TRUE, /* Output warnings for
                                                          non-portables */
-                                               UTF);
-		    if (! valid) {
+                                               NULL,
+                                               UTF))
+                    {
 			yyerror(error);
 			uv = 0; /* drop through to ensure range ends are set */
 		    }
@@ -3567,14 +3567,14 @@ S_scan_const(pTHX_ char *start)
 		{
 		    const char* error;
 
-		    bool valid = grok_bslash_x(&s, send,
+		    if (! grok_bslash_x(&s, send,
                                                &uv, &error,
-                                               TRUE, /* Output warning */
                                                FALSE, /* Not strict */
                                                TRUE,  /* Output warnings for
                                                          non-portables */
-                                               UTF);
-		    if (! valid) {
+                                               NULL,
+                                               UTF))
+                    {
 			yyerror(error);
 			uv = 0; /* drop through to ensure range ends are set */
 		    }
@@ -3991,7 +3991,14 @@ S_scan_const(pTHX_ char *start)
 	    case 'c':
 		s++;
 		if (s < send) {
-		    *d++ = grok_bslash_c(*s, 1);
+                    const char * message;
+
+		    if (! grok_bslash_c(*s, (U8 *) d, &message, NULL)) {
+                        yyerror(message);
+                        yyquit();   /* Have always immediately croaked on
+                                       errors in this */
+                    }
+		    d++;
 		}
 		else {
 		    yyerror("Missing control char name in \\c");
