@@ -6,12 +6,9 @@ use Config;
 BEGIN {
     require '../../t/test.pl';
 }
+BEGIN { plan skip_all => 'no threads' unless $Config{useithreads} }
 
 use threads;
-
-
-$Config{usethreads}
-  or plan skip_all => "test requires threads";
 
 # do not use XS::APItest in this test
 
