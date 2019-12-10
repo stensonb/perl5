@@ -25,3 +25,4 @@ for (1..thread_count) {
     });
 }
 ok $_->join for @threads;
+
