@@ -3354,23 +3354,21 @@ mblen(s, n)
         if (! SvPOK(s)) {
             memzero(&PL_mbrlen_ps, sizeof(PL_mbrlen_ps)); /* Initialize state */
 
-            /* Passing NULL to mbrlen() does not tell us if this is a stateless
-             * encoding or not, as mblen() does; it supposedly always returns
-             * 0.  To emulate mblen() in this instance, we have to actually
-             * call mblen().  This actually isn't a problem because every
-             * thread is using their own state variable, even threads in the
-             * global locale */
+            /* The return value of mblen() when the first parameter is NULL
+             * indicates if the locale is stateless or stateful.  Normally we
+             * prefer the more thread safe function mbrlen(), but it doesn't
+             * give this information.  Thus we have to call mblen() itself
+             * under the control of a semaphore. */
             LOCALE_LOCK;
             RETVAL = mblen(NULL, n);
             LOCALE_UNLOCK;
         }
-        else {
-            RETVAL = mbrlen(SvPVX(s), n, &PL_mbrlen_ps); /* Prefer reentrant
-                                                            version */
+        else {  /* Not resetting state; prefer reentrant version */
+            RETVAL = mbrlen(SvPVX(s), n, &PL_mbrlen_ps);
         }
 #else
         /* This might prevent some races, but locales can be switched out
-         * without locking, so this isn't a cure all */
+         * without locking, so this isn't a cure all.   */
         LOCALE_LOCK;
 
         if (! SvPOK(s)) {
@@ -3395,18 +3393,33 @@ mbtowc(pwc, s, n)
 	wchar_t *	pwc
 	char *		s
 	size_t		n
-    PREINIT:
-#if defined(USE_ITHREADS) && defined(HAS_MBRTOWC)
-        mbstate_t ps;
-#endif
     CODE:
 #if defined(USE_ITHREADS) && defined(HAS_MBRTOWC)
-        memset(&ps, 0, sizeof(ps));;
-        PERL_UNUSED_RESULT(mbrtowc(pwc, NULL, 0, &ps));/* Reset any shift state */
-        errno = 0;
-        RETVAL = mbrtowc(pwc, s, n, &ps);   /* Prefer reentrant version */
+        if (s == NULL) {
+            memzero(&PL_mbrtowc_ps, sizeof(PL_mbrtowc_ps)); /* Initialize state */
+            errno = 0;
+
+            /* The return value of mbtowc() when the second parameter is NULL
+             * indicates if the locale is stateless or stateful.  Normally we
+             * prefer the more thread safe function mbrtowc(), but it doesn't
+             * give this information.  Thus we have to call mbtowc() itself
+             * under the control of a semaphore. */
+            LOCALE_LOCK;
+            RETVAL = mbtowc(pwc, NULL, n);
+            LOCALE_UNLOCK;
+        }
+        else {  /* Not resetting state; prefer reentrant version */
+            errno = 0;
+            RETVAL = mbrtowc(pwc, s, n, &PL_mbrtowc_ps);
+        }
 #else
-        RETVAL = mbtowc(pwc, s, n);
+        /* This might prevent some races, but locales can be switched out
+         * without locking, so this isn't a cure all */
+        LOCALE_LOCK;
+
+        errno = 0;
+        RETVAL = mbtowc(pwc, NULL, n);
+        LOCALE_UNLOCK;
 #endif
     OUTPUT:
         RETVAL
@@ -3421,6 +3434,36 @@ int
 wctomb(s, wchar)
 	char *		s
 	wchar_t		wchar
+    CODE:
+#if defined(USE_ITHREADS) && defined(HAS_WCRTOMB)
+        if (s == NULL) {
+            memzero(&PL_wcrtomb_ps, sizeof(PL_wcrtomb_ps)); /* Initialize state */
+            errno = 0;
+
+            /* The return value of wctomb() when the second parameter is NULL
+             * indicates if the locale is stateless or stateful.  Normally we
+             * prefer the more thread safe function wcrtomb(), but it doesn't
+             * give this information.  Thus we have to call wctomb() itself
+             * under the control of a semaphore. */
+            LOCALE_LOCK;
+            RETVAL = wctomb(NULL, wchar);
+            LOCALE_UNLOCK;
+        }
+        else {  /* Not resetting state; prefer reentrant version */
+            errno = 0;
+            RETVAL = wcrtomb(s, wchar, &PL_wcrtomb_ps);
+        }
+#else
+        /* This might prevent some races, but locales can be switched out
+         * without locking, so this isn't a cure all */
+        LOCALE_LOCK;
+
+        errno = 0;
+        RETVAL = wctomb(NULL, wchar);
+        LOCALE_UNLOCK;
+#endif
+    OUTPUT:
+        RETVAL
 
 int
 strcoll(s1, s2)

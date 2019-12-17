@@ -1070,13 +1070,17 @@ Not implemented.  C<malloc()> is C-specific.  Perl does memory management transp
 This is identical to the C function C<mblen()>.
 
 Core Perl does not have any support for the wide and multibyte
-characters of the C standards, except under UTF-8 locales, so this might
-be a rather useless function.
+characters of the C standards, except under Unicode UTF-8 locales.
 
-However, Perl supports Unicode, see L<perluniintro>.
+So
 
 Use C<undef> as the first parameter to this function to get the effect
-of passing NULL as the first parameter to the C function.
+of passing NULL as the first parameter to the C function.  Note that the
+returned value is different here than when the first parameter is
+defined.  It is 0 if the locale is stateless; and non-zero otherwise.
+
+C<mbrlen> is transparently used instead on threaded perls, if available
+on the platform, so as to avoid thread race conditions.
 
 =item C<mbstowcs>
 
